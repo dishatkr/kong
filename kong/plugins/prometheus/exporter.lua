@@ -106,6 +106,9 @@ local function init()
   metrics.consumer_status = prometheus:counter("http_consumer_status",
                                           "HTTP status codes for customer per service/route in Kong",
                                           {"service", "route", "code", "consumer"})
+  metrics.http_status_with_target = prometheus:counter("http_status_with_target",
+                                            "HTTP status codes with target labels per service/route in Kong",
+                                            {"service", "route", "code", "type", "target"})
 
   -- Hybrid mode status
   if role == "control_plane" then
@@ -150,12 +153,29 @@ end
 -- so putting the "more dynamic" label at the end will save us some memory
 local labels_table = {0, 0, 0}
 local labels_table4 = {0, 0, 0, 0}
+local labels_table5 = {0, 0, 0, 0, 0}
 local upstream_target_addr_health_table = {
   { value = 0, labels = { 0, 0, 0, "healthchecks_off", ngx.config.subsystem } },
   { value = 0, labels = { 0, 0, 0, "healthy", ngx.config.subsystem } },
   { value = 0, labels = { 0, 0, 0, "unhealthy", ngx.config.subsystem } },
   { value = 0, labels = { 0, 0, 0, "dns_error", ngx.config.subsystem } },
 }
+
+local function add_additional_http_status_metrics(message, labels_table, labels_table5)
+    labels_table5[1] = labels_table[1]
+    labels_table5[2] = labels_table[2]
+    labels_table5[3] = labels_table[3]
+    -- check if size of tries is > 0 to set type to upstream
+    if(#(message.tries) > 0) then
+        labels_table5[4] = "upstream"
+        local res = concat( { message.tries[1].ip , ":", message.tries[1].port } )
+        labels_table5[5] = res
+    else
+        labels_table5[4] = "kong"
+        labels_table5[5] = " "
+    end
+    return labels_table5;
+end
 
 local function set_healthiness_metrics(table, upstream, target, address, status, metrics_bucket)
   for i = 1, #table do
@@ -171,7 +191,7 @@ end
 local log
 
 if kong_subsystem == "http" then
-  function log(message, serialized)
+  function log(message, serialized, http_status_with_target)
     if not metrics then
       kong.log.err("prometheus: can not log metrics because of an initialization "
               .. "error, please make sure that you've declared "
@@ -195,7 +215,12 @@ if kong_subsystem == "http" then
     labels_table[1] = service_name
     labels_table[2] = route_name
     labels_table[3] = message.response.status
-    metrics.status:inc(1, labels_table)
+    if http_status_with_target then
+      labels_table5 = add_additional_http_status_metrics(message, labels_table, labels_table5)
+      metrics.http_status_with_target:inc(1, labels_table5)
+    else
+      metrics.status:inc(1, labels_table)
+    end
 
     local request_size = tonumber(message.request.size)
     if request_size and request_size > 0 then

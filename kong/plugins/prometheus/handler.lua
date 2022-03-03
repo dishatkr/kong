@@ -23,7 +23,7 @@ function PrometheusHandler.log(self, conf)
     serialized.consumer = message.consumer.username
   end
 
-  prometheus.log(message, serialized)
+  prometheus.log(message, serialized, conf.kong_http_status_with_target)
 end
 
 

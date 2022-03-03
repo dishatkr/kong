@@ -14,6 +14,7 @@ return {
         type = "record",
         fields = {
           { per_consumer = { type = "boolean", default = false }, },
+          { kong_http_status_with_target = { type = "boolean", default = false }, },
         },
         custom_validator = validate_shared_dict,
     }, },
